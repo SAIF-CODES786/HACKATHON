@@ -52,6 +52,18 @@ class ResumeParser:
         # Other Tech Terms
         'api', 'rest', 'graphql', 'microservices', 'devops', 'agile', 'scrum', 'jira'
     ]
+    
+    # Job titles - common job-related keywords that should never be in names
+    JOB_TITLES = [
+        'developer', 'engineer', 'manager', 'associate', 'consultant', 'analyst', 
+        'intern', 'designer', 'architect', 'lead', 'senior', 'junior', 'staff',
+        'principal', 'director', 'head', 'chief', 'officer', 'specialist',
+        'stack', 'frontend', 'backend', 'fullstack', 'full-stack', 'full stack',
+        'software', 'data', 'web', 'mobile', 'cloud', 'security', 'network',
+        'product', 'project', 'program', 'technical', 'tech', 'it', 'qa', 'qe',
+        'coordinator', 'administrator', 'executive', 'assistant', 'representative'
+    ]
+
 
     
     def __init__(self):
@@ -118,18 +130,23 @@ class ResumeParser:
             if len(name) > 50:
                 return False
             
-            # Check against forbidden names (tech terms)
             name_lower = name.lower()
+            
+            # STEP 1: Job Title Blocker - Reject if contains ANY job-related keyword
+            for job_title in self.JOB_TITLES:
+                if job_title in name_lower:
+                    return False  # Immediately discard if contains job title
+            
+            # Check against forbidden names (tech terms)
             for forbidden in self.FORBIDDEN_NAMES:
                 if forbidden in name_lower:
                     return False
             
-            # Check if it contains spaces (proper names usually have spaces)
-            # Require at least 2 words (First Name + Last Name)
+            # STEP 2: Word Count Limit - Real names rarely exceed 4 words
             words = name.split()
             if len(words) < 2:  # Must have at least first + last name
                 return False
-            if len(words) > 5:  # Too many words, likely not a name
+            if len(words) > 4:  # Maximum 4 words (e.g., "Mary Jane O'Connor Smith")
                 return False
             
             # Check if it's mostly alphabetic (allow spaces, hyphens, apostrophes)
@@ -143,6 +160,7 @@ class ResumeParser:
                 return False
             
             return True
+
 
         
         def extract_name_from_email(email: str) -> str:

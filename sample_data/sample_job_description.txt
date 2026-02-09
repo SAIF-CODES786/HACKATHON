@@ -1,0 +1,51 @@
+Senior Full-Stack Software Engineer
+
+We are seeking an experienced Full-Stack Software Engineer to join our growing team. The ideal candidate will have strong expertise in modern web technologies and a passion for building scalable applications.
+
+RESPONSIBILITIES:
+• Design and develop full-stack web applications using React and Python
+• Build RESTful APIs and microservices architecture
+• Collaborate with cross-functional teams to define and implement new features
+• Write clean, maintainable, and well-documented code
+• Participate in code reviews and mentor junior developers
+• Optimize application performance and scalability
+• Implement automated testing and CI/CD pipelines
+
+REQUIRED QUALIFICATIONS:
+• Bachelor's degree in Computer Science or related field
+• 5+ years of professional software development experience
+• Strong proficiency in Python and modern JavaScript frameworks (React, Vue, or Angular)
+• Experience with FastAPI, Django, or Flask
+• Solid understanding of RESTful API design and implementation
+• Proficiency with SQL and NoSQL databases (PostgreSQL, MongoDB)
+• Experience with cloud platforms (AWS, Azure, or GCP)
+• Strong knowledge of Git version control
+• Excellent problem-solving and communication skills
+
+PREFERRED QUALIFICATIONS:
+• Master's degree in Computer Science
+• Experience with Docker and Kubernetes
+• Knowledge of machine learning and data science
+• AWS or Azure certifications
+• Experience with microservices architecture
+• Familiarity with CI/CD tools (Jenkins, GitHub Actions)
+• Open source contributions
+
+TECHNICAL SKILLS:
+• Languages: Python, JavaScript, TypeScript, SQL
+• Frontend: React, Redux, HTML5, CSS3, TailwindCSS
+• Backend: FastAPI, Django, Flask, Node.js
+• Databases: PostgreSQL, MongoDB, Redis
+• Cloud: AWS (EC2, S3, Lambda), Azure, GCP
+• DevOps: Docker, Kubernetes, Jenkins, GitHub Actions
+• Tools: Git, Jira, VS Code, Postman
+
+BENEFITS:
+• Competitive salary and equity
+• Health, dental, and vision insurance
+• 401(k) matching
+• Flexible work arrangements
+• Professional development budget
+• Unlimited PTO
+
+We value diversity and are committed to creating an inclusive environment for all employees.

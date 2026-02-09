@@ -1,0 +1,214 @@
+"""
+Resume Parser Module
+Extracts structured information from PDF and DOCX resumes
+"""
+
+import re
+import pdfplumber
+from docx import Document
+import spacy
+from typing import Dict, List, Optional
+import os
+
+# Load spaCy model for NLP
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    print("Downloading spaCy model...")
+    os.system("python -m spacy download en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
+
+
+class ResumeParser:
+    """Parse resumes and extract structured information"""
+    
+    # Common skill keywords (expandable)
+    SKILLS_DATABASE = {
+        'programming': ['python', 'java', 'javascript', 'c++', 'c#', 'ruby', 'go', 'rust', 'php', 'swift', 'kotlin', 'typescript'],
+        'web': ['react', 'angular', 'vue', 'node.js', 'express', 'django', 'flask', 'fastapi', 'html', 'css', 'tailwind'],
+        'data': ['sql', 'mongodb', 'postgresql', 'mysql', 'redis', 'elasticsearch', 'pandas', 'numpy', 'spark'],
+        'ml': ['machine learning', 'deep learning', 'tensorflow', 'pytorch', 'scikit-learn', 'keras', 'nlp', 'computer vision'],
+        'cloud': ['aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'jenkins', 'ci/cd'],
+        'tools': ['git', 'jira', 'agile', 'scrum', 'rest api', 'graphql', 'microservices']
+    }
+    
+    EDUCATION_KEYWORDS = ['bachelor', 'master', 'phd', 'b.tech', 'm.tech', 'b.s', 'm.s', 'mba', 'degree', 'university', 'college']
+    CERTIFICATION_KEYWORDS = ['certified', 'certification', 'certificate', 'aws', 'azure', 'google cloud', 'pmp', 'cissp']
+    
+    def __init__(self):
+        self.all_skills = []
+        for category_skills in self.SKILLS_DATABASE.values():
+            self.all_skills.extend(category_skills)
+    
+    def extract_text_from_pdf(self, file_path: str) -> str:
+        """Extract text from PDF file"""
+        text = ""
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+        except Exception as e:
+            print(f"Error extracting PDF: {e}")
+        return text
+    
+    def extract_text_from_docx(self, file_path: str) -> str:
+        """Extract text from DOCX file"""
+        text = ""
+        try:
+            doc = Document(file_path)
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+        except Exception as e:
+            print(f"Error extracting DOCX: {e}")
+        return text
+    
+    def extract_email(self, text: str) -> Optional[str]:
+        """Extract email address using regex"""
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        emails = re.findall(email_pattern, text)
+        return emails[0] if emails else None
+    
+    def extract_phone(self, text: str) -> Optional[str]:
+        """Extract phone number using regex"""
+        # Matches various phone formats
+        phone_pattern = r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'
+        phones = re.findall(phone_pattern, text)
+        return phones[0] if phones else None
+    
+    def extract_name(self, text: str) -> Optional[str]:
+        """Extract name using NLP (first PERSON entity)"""
+        doc = nlp(text[:500])  # Check first 500 chars
+        for ent in doc.ents:
+            if ent.label_ == "PERSON":
+                return ent.text
+        
+        # Fallback: first line often contains name
+        lines = text.strip().split('\n')
+        if lines:
+            return lines[0].strip()
+        return None
+    
+    def extract_skills(self, text: str) -> List[str]:
+        """Extract skills by keyword matching"""
+        text_lower = text.lower()
+        found_skills = []
+        
+        for skill in self.all_skills:
+            # Use word boundaries to avoid partial matches
+            pattern = r'\b' + re.escape(skill.lower()) + r'\b'
+            if re.search(pattern, text_lower):
+                found_skills.append(skill.title())
+        
+        return list(set(found_skills))  # Remove duplicates
+    
+    def extract_education(self, text: str) -> List[Dict[str, str]]:
+        """Extract education information"""
+        education = []
+        lines = text.split('\n')
+        
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            # Check if line contains education keywords
+            if any(keyword in line_lower for keyword in self.EDUCATION_KEYWORDS):
+                edu_entry = {
+                    'degree': line.strip(),
+                    'institution': '',
+                    'year': ''
+                }
+                
+                # Try to find year (4 digits)
+                year_match = re.search(r'\b(19|20)\d{2}\b', line)
+                if year_match:
+                    edu_entry['year'] = year_match.group()
+                
+                # Look at next line for institution
+                if i + 1 < len(lines):
+                    edu_entry['institution'] = lines[i + 1].strip()
+                
+                education.append(edu_entry)
+        
+        return education
+    
+    def extract_experience(self, text: str) -> List[Dict[str, str]]:
+        """Extract work experience"""
+        experience = []
+        
+        # Look for common job title patterns and company names
+        doc = nlp(text)
+        
+        # Find organizations (companies)
+        companies = [ent.text for ent in doc.ents if ent.label_ == "ORG"]
+        
+        # Extract years of experience (rough estimate)
+        years = re.findall(r'\b(19|20)\d{2}\b', text)
+        
+        if companies:
+            for company in companies[:5]:  # Limit to 5 companies
+                exp_entry = {
+                    'company': company,
+                    'position': 'Not specified',
+                    'duration': ''
+                }
+                experience.append(exp_entry)
+        
+        return experience
+    
+    def calculate_years_of_experience(self, text: str) -> float:
+        """Calculate total years of experience"""
+        # Find all years mentioned
+        years = re.findall(r'\b(19|20)\d{2}\b', text)
+        if len(years) >= 2:
+            years_int = [int(y) for y in years]
+            # Estimate: difference between oldest and newest year
+            return max(years_int) - min(years_int)
+        return 0.0
+    
+    def extract_certifications(self, text: str) -> List[str]:
+        """Extract certifications"""
+        certifications = []
+        text_lower = text.lower()
+        
+        for keyword in self.CERTIFICATION_KEYWORDS:
+            if keyword in text_lower:
+                # Find the line containing the certification
+                for line in text.split('\n'):
+                    if keyword in line.lower():
+                        certifications.append(line.strip())
+                        break
+        
+        return list(set(certifications))
+    
+    def parse_resume(self, file_path: str, filename: str) -> Dict:
+        """Main parsing function - orchestrates all extraction"""
+        # Determine file type and extract text
+        if filename.lower().endswith('.pdf'):
+            text = self.extract_text_from_pdf(file_path)
+        elif filename.lower().endswith('.docx'):
+            text = self.extract_text_from_docx(file_path)
+        else:
+            return {"error": "Unsupported file format"}
+        
+        if not text:
+            return {"error": "Could not extract text from file"}
+        
+        # Extract all information
+        parsed_data = {
+            'filename': filename,
+            'name': self.extract_name(text),
+            'email': self.extract_email(text),
+            'phone': self.extract_phone(text),
+            'skills': self.extract_skills(text),
+            'education': self.extract_education(text),
+            'experience': self.extract_experience(text),
+            'years_of_experience': self.calculate_years_of_experience(text),
+            'certifications': self.extract_certifications(text),
+            'raw_text': text[:1000]  # Store first 1000 chars for reference
+        }
+        
+        return parsed_data
+
+
+# Singleton instance
+parser = ResumeParser()

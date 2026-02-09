@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: resume_db
+    environment:
+      POSTGRES_USER: resume_user
+      POSTGRES_PASSWORD: resume_password
+      POSTGRES_DB: resume_screening
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - resume_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: resume_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - resume_network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resume_backend
+    environment:
+      DATABASE_URL: postgresql://resume_user:resume_password@postgres:5432/resume_screening
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY:-change-this-in-production}
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173,http://frontend:3000
+      DEBUG: "True"
+      HOST: 0.0.0.0
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./backend:/app
+      - backend_uploads:/app/uploads
+    networks:
+      - resume_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: resume_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - resume_network
+    environment:
+      VITE_API_URL: http://backend:8000
+
+volumes:
+  postgres_data:
+  backend_uploads:
+
+
+networks:
+  resume_network:
+    driver: bridge

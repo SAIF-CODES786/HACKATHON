@@ -122,7 +122,7 @@ const Dashboard = ({ candidates, onExport, onViewDetails }) => {
                                 <div className="flex items-center gap-3 mb-3">
                                     <span className="text-3xl">{getRankBadge(candidate.rank)}</span>
                                     <div>
-                                        <h3 className="text-xl font-bold text-gray-800">
+                                        <h3 className="text-xl font-bold text-gray-800 break-words">
                                             {candidate.name || 'Unknown Candidate'}
                                         </h3>
                                         <div className="flex flex-wrap gap-3 mt-1 text-sm text-gray-600">

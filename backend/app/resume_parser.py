@@ -77,18 +77,109 @@ class ResumeParser:
         phones = re.findall(phone_pattern, text)
         return phones[0] if phones else None
     
-    def extract_name(self, text: str) -> Optional[str]:
-        """Extract name using NLP (first PERSON entity)"""
-        doc = nlp(text[:500])  # Check first 500 chars
+    def extract_name(self, text: str, email: Optional[str] = None) -> Optional[str]:
+        """
+        Extract name using NLP with validation and fallback mechanisms
+        
+        Args:
+            text: Resume text
+            email: Email address (for fallback)
+            
+        Returns:
+            Validated candidate name or fallback
+        """
+        def is_valid_name(name: str) -> bool:
+            """Validate if extracted text is a reasonable name"""
+            if not name:
+                return False
+            
+            name = name.strip()
+            
+            # Check length (names should be < 50 characters)
+            if len(name) > 50:
+                return False
+            
+            # Check if it contains spaces (proper names usually have spaces)
+            # Allow single names but prefer names with spaces
+            words = name.split()
+            if len(words) > 5:  # Too many words, likely not a name
+                return False
+            
+            # Check if it's mostly alphabetic (allow spaces, hyphens, apostrophes)
+            alpha_chars = sum(c.isalpha() or c.isspace() or c in ['-', "'", '.'] for c in name)
+            if alpha_chars / len(name) < 0.8:  # At least 80% should be valid name characters
+                return False
+            
+            # Reject if it looks like a sentence (contains common non-name words)
+            non_name_words = ['with', 'and', 'the', 'for', 'in', 'at', 'to', 'of', 'undergraduate', 'graduate', 'student']
+            name_lower = name.lower()
+            if any(word in name_lower for word in non_name_words):
+                return False
+            
+            return True
+        
+        def extract_name_from_email(email: str) -> str:
+            """Extract name from email address as fallback"""
+            if not email:
+                return "Unknown Candidate"
+            
+            # Get part before @
+            username = email.split('@')[0]
+            
+            # Remove numbers and special characters
+            name_parts = re.split(r'[._\-\d]+', username)
+            name_parts = [part.capitalize() for part in name_parts if part and len(part) > 1]
+            
+            if name_parts:
+                return ' '.join(name_parts[:2])  # Take first two parts (first name, last name)
+            return username.capitalize()
+        
+        # Strategy 1: Use spaCy NER to find PERSON entities
+        doc = nlp(text[:1000])  # Check first 1000 chars (increased from 500)
+        
+        candidates = []
         for ent in doc.ents:
             if ent.label_ == "PERSON":
-                return ent.text
+                if is_valid_name(ent.text):
+                    # Score based on position (earlier is better) and word count
+                    position_score = 1.0 - (ent.start_char / 1000)  # Earlier = higher score
+                    word_count = len(ent.text.split())
+                    word_score = 1.0 if 2 <= word_count <= 4 else 0.5  # Prefer 2-4 words
+                    
+                    candidates.append({
+                        'name': ent.text.strip(),
+                        'score': position_score + word_score
+                    })
         
-        # Fallback: first line often contains name
-        lines = text.strip().split('\n')
-        if lines:
-            return lines[0].strip()
-        return None
+        # Return highest scoring candidate
+        if candidates:
+            best_candidate = max(candidates, key=lambda x: x['score'])
+            return best_candidate['name']
+        
+        # Strategy 2: Check first few lines for name-like patterns
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        for line in lines[:5]:  # Check first 5 non-empty lines
+            # Skip lines that are clearly not names
+            if len(line) > 50 or '@' in line or 'http' in line.lower():
+                continue
+            
+            if is_valid_name(line):
+                # Additional check: should have at least one space for first+last name
+                if ' ' in line:
+                    return line
+        
+        # Strategy 3: Extract from email if available
+        if email:
+            return extract_name_from_email(email)
+        
+        # Strategy 4: Try to extract email from text and use it
+        extracted_email = self.extract_email(text)
+        if extracted_email:
+            return extract_name_from_email(extracted_email)
+        
+        # Final fallback
+        return "Unknown Candidate"
+
     
     def extract_skills(self, text: str) -> List[str]:
         """Extract skills by keyword matching"""
@@ -193,11 +284,14 @@ class ResumeParser:
         if not text:
             return {"error": "Could not extract text from file"}
         
+        # Extract email first (needed for name fallback)
+        email = self.extract_email(text)
+        
         # Extract all information
         parsed_data = {
             'filename': filename,
-            'name': self.extract_name(text),
-            'email': self.extract_email(text),
+            'name': self.extract_name(text, email),  # Pass email for fallback
+            'email': email,
             'phone': self.extract_phone(text),
             'skills': self.extract_skills(text),
             'education': self.extract_education(text),

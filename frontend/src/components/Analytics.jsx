@@ -138,9 +138,9 @@ const Analytics = ({ candidates }) => {
 
                 {/* Experience Distribution */}
                 <div className="card">
-                    <h3 className="text-xl font-bold text-gray-800 mb-4">Experience Level Distribution</h3>
+                    <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Experience Level Distribution</h3>
                     <ResponsiveContainer width="100%" height={350}>
-                        <PieChart>
+                        <PieChart margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                             <Pie
                                 data={experienceData}
                                 cx="50%"

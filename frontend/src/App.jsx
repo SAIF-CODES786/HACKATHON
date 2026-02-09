@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { api } from './services/api';
 import UploadSection from './components/UploadSection';
-import JobDescriptionForm from './components/JobDescriptionForm';
+import JobBuilder from './components/JobBuilder';
 import Dashboard from './components/Dashboard';
 import Analytics from './components/Analytics';
 import CandidateDetail from './components/CandidateDetail';
-import { FileSearch, BarChart3, Trash2 } from 'lucide-react';
+import { FileSearch, BarChart3, Trash2, Sun, Moon } from 'lucide-react';
+import { useTheme } from './context/ThemeContext';
 
 function App() {
+    const { isDark, toggleTheme } = useTheme();
     const [uploadedFiles, setUploadedFiles] = useState([]);
     const [candidates, setCandidates] = useState([]);
     const [selectedCandidate, setSelectedCandidate] = useState(null);
@@ -83,17 +85,30 @@ function App() {
     };
 
     return (
-        <div className="min-h-screen py-8 px-4">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300 py-8 px-4">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="text-center mb-8 animate-fade-in">
+                <div className="text-center mb-8 animate-fade-in relative">
+                    {/* Theme Toggle */}
+                    <button
+                        onClick={toggleTheme}
+                        className="absolute right-0 top-0 p-3 rounded-xl bg-white/10 dark:bg-gray-800/50 backdrop-blur-sm border border-white/20 dark:border-gray-700 hover:bg-white/20 dark:hover:bg-gray-700/50 transition-all duration-300 group"
+                        aria-label="Toggle theme"
+                    >
+                        {isDark ? (
+                            <Sun className="w-6 h-6 text-yellow-400 group-hover:rotate-180 transition-transform duration-500" />
+                        ) : (
+                            <Moon className="w-6 h-6 text-blue-200 group-hover:-rotate-12 transition-transform duration-500" />
+                        )}
+                    </button>
+
                     <div className="flex items-center justify-center gap-3 mb-3">
-                        <FileSearch className="w-12 h-12 text-white" />
-                        <h1 className="text-5xl font-extrabold text-white drop-shadow-lg">
+                        <FileSearch className="w-12 h-12 text-primary-400 dark:text-primary-300" />
+                        <h1 className="text-5xl font-extrabold bg-gradient-to-r from-primary-600 to-accent-600 dark:from-primary-400 dark:to-accent-400 bg-clip-text text-transparent drop-shadow-lg">
                             Resume Screening System
                         </h1>
                     </div>
-                    <p className="text-xl text-white text-opacity-90 font-medium">
+                    <p className="text-xl text-gray-700 dark:text-gray-300 font-medium">
                         AI-Powered Candidate Ranking & Analysis
                     </p>
                 </div>
@@ -101,8 +116,8 @@ function App() {
                 {/* Notification */}
                 {notification && (
                     <div className={`fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-lg animate-slide-up ${notification.type === 'success' ? 'bg-green-500' :
-                            notification.type === 'warning' ? 'bg-yellow-500' :
-                                'bg-red-500'
+                        notification.type === 'warning' ? 'bg-yellow-500' :
+                            'bg-red-500'
                         } text-white font-semibold`}>
                         {notification.message}
                     </div>
@@ -119,7 +134,7 @@ function App() {
                             isLoading={isUploading}
                         />
 
-                        <JobDescriptionForm
+                        <JobBuilder
                             onSubmit={handleScore}
                             isLoading={isScoring}
                         />
@@ -144,8 +159,8 @@ function App() {
                                         <button
                                             onClick={() => setActiveTab('dashboard')}
                                             className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${activeTab === 'dashboard'
-                                                    ? 'bg-gradient-to-r from-primary-600 to-accent-600 text-white shadow-md'
-                                                    : 'text-gray-600 hover:bg-gray-100'
+                                                ? 'bg-gradient-to-r from-primary-600 to-accent-600 text-white shadow-md'
+                                                : 'text-gray-600 hover:bg-gray-100'
                                                 }`}
                                         >
                                             <FileSearch className="w-5 h-5 inline mr-2" />
@@ -154,8 +169,8 @@ function App() {
                                         <button
                                             onClick={() => setActiveTab('analytics')}
                                             className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${activeTab === 'analytics'
-                                                    ? 'bg-gradient-to-r from-primary-600 to-accent-600 text-white shadow-md'
-                                                    : 'text-gray-600 hover:bg-gray-100'
+                                                ? 'bg-gradient-to-r from-primary-600 to-accent-600 text-white shadow-md'
+                                                : 'text-gray-600 hover:bg-gray-100'
                                                 }`}
                                         >
                                             <BarChart3 className="w-5 h-5 inline mr-2" />

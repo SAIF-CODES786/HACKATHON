@@ -68,9 +68,9 @@ const Analytics = ({ candidates }) => {
     if (!stats) {
         return (
             <div className="card text-center py-12">
-                <TrendingUp className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-600 mb-2">No Analytics Available</h3>
-                <p className="text-gray-500">Score candidates to view analytics</p>
+                <TrendingUp className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-600 dark:text-gray-400 mb-2">No Analytics Available</h3>
+                <p className="text-gray-500 dark:text-gray-500">Score candidates to view analytics</p>
             </div>
         );
     }
@@ -124,14 +124,14 @@ const Analytics = ({ candidates }) => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Skill Distribution */}
                 <div className="card">
-                    <h3 className="text-xl font-bold text-gray-800 mb-4">Top Skills Distribution</h3>
+                    <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Top Skills Distribution</h3>
                     <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={skillData}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="count" fill="#6366f1" />
+                        <BarChart data={skillData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} stroke="#9ca3af" />
+                            <YAxis stroke="#9ca3af" />
+                            <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+                            <Bar dataKey="count" fill="#6366f1" radius={[8, 8, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
@@ -139,23 +139,29 @@ const Analytics = ({ candidates }) => {
                 {/* Experience Distribution */}
                 <div className="card">
                     <h3 className="text-xl font-bold text-gray-800 mb-4">Experience Level Distribution</h3>
-                    <ResponsiveContainer width="100%" height={300}>
+                    <ResponsiveContainer width="100%" height={350}>
                         <PieChart>
                             <Pie
                                 data={experienceData}
                                 cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                                outerRadius={100}
+                                cy="45%"
+                                outerRadius={80}
                                 fill="#8884d8"
                                 dataKey="value"
+                                label={false}
                             >
                                 {experienceData.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                             </Pie>
-                            <Tooltip />
+                            <Tooltip
+                                formatter={(value, name, props) => [`${value} candidates`, props.payload.name]}
+                            />
+                            <Legend
+                                verticalAlign="bottom"
+                                height={36}
+                                formatter={(value, entry) => `${value}: ${entry.payload.value}`}
+                            />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>

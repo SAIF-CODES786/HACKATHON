@@ -35,6 +35,25 @@ class ResumeParser:
     EDUCATION_KEYWORDS = ['bachelor', 'master', 'phd', 'b.tech', 'm.tech', 'b.s', 'm.s', 'mba', 'degree', 'university', 'college']
     CERTIFICATION_KEYWORDS = ['certified', 'certification', 'certificate', 'aws', 'azure', 'google cloud', 'pmp', 'cissp']
     
+    # Forbidden names - common tech terms that should never be names
+    FORBIDDEN_NAMES = [
+        # Programming Languages
+        'python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'ruby', 'go', 'rust', 'php', 'swift', 'kotlin',
+        # Libraries & Frameworks
+        'react', 'angular', 'vue', 'node', 'nodejs', 'express', 'django', 'flask', 'fastapi', 'spring',
+        'pandas', 'numpy', 'scipy', 'matplotlib', 'seaborn', 'plotly', 'tensorflow', 'pytorch', 'keras',
+        # Tools & Platforms
+        'docker', 'kubernetes', 'git', 'github', 'gitlab', 'jenkins', 'aws', 'azure', 'gcp',
+        'linux', 'windows', 'macos', 'ubuntu', 'debian',
+        # Design Tools
+        'adobe', 'photoshop', 'illustrator', 'figma', 'sketch', 'xd',
+        # Databases
+        'mongodb', 'postgresql', 'mysql', 'redis', 'elasticsearch', 'sql',
+        # Other Tech Terms
+        'api', 'rest', 'graphql', 'microservices', 'devops', 'agile', 'scrum', 'jira'
+    ]
+
+    
     def __init__(self):
         self.all_skills = []
         for category_skills in self.SKILLS_DATABASE.values():
@@ -99,9 +118,17 @@ class ResumeParser:
             if len(name) > 50:
                 return False
             
+            # Check against forbidden names (tech terms)
+            name_lower = name.lower()
+            for forbidden in self.FORBIDDEN_NAMES:
+                if forbidden in name_lower:
+                    return False
+            
             # Check if it contains spaces (proper names usually have spaces)
-            # Allow single names but prefer names with spaces
+            # Require at least 2 words (First Name + Last Name)
             words = name.split()
+            if len(words) < 2:  # Must have at least first + last name
+                return False
             if len(words) > 5:  # Too many words, likely not a name
                 return False
             
@@ -112,11 +139,11 @@ class ResumeParser:
             
             # Reject if it looks like a sentence (contains common non-name words)
             non_name_words = ['with', 'and', 'the', 'for', 'in', 'at', 'to', 'of', 'undergraduate', 'graduate', 'student']
-            name_lower = name.lower()
             if any(word in name_lower for word in non_name_words):
                 return False
             
             return True
+
         
         def extract_name_from_email(email: str) -> str:
             """Extract name from email address as fallback"""

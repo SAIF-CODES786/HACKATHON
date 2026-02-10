@@ -276,6 +276,28 @@ class ResumeParser:
             
             return True
 
+        def clean_and_merge_name(name: str) -> str:
+            """Clean name and merge split initials/words"""
+            if not name:
+                return name
+            
+            # Remove extra whitespace
+            name = ' '.join(name.split())
+            
+            # Fix split initials like "S K" -> "SK" or "S KUMAR" -> "S Kumar"
+            words = name.split()
+            cleaned_words = []
+            
+            for i, word in enumerate(words):
+                # If it's a single letter (initial) and next word is also single letter
+                if len(word) == 1 and i + 1 < len(words) and len(words[i + 1]) == 1:
+                    # Merge initials: "S K" -> "SK"
+                    cleaned_words.append(word + words[i + 1])
+                    words[i + 1] = ''  # Mark as processed
+                elif word:  # Skip empty strings
+                    cleaned_words.append(word)
+            
+            return ' '.join(cleaned_words)
 
         
         def extract_name_from_email(email: str) -> str:
@@ -301,14 +323,17 @@ class ResumeParser:
         candidates = []
         for ent in doc.ents:
             if ent.label_ == "PERSON":
-                if is_valid_name(ent.text):
+                # Clean and merge the name first
+                cleaned_name = clean_and_merge_name(ent.text)
+                
+                if is_valid_name(cleaned_name):
                     # Score based on position (earlier is better) and word count
                     position_score = 1.0 - (ent.start_char / 1000)  # Earlier = higher score
-                    word_count = len(ent.text.split())
+                    word_count = len(cleaned_name.split())
                     word_score = 1.0 if 2 <= word_count <= 4 else 0.5  # Prefer 2-4 words
                     
                     candidates.append({
-                        'name': ent.text.strip(),
+                        'name': cleaned_name.strip(),
                         'score': position_score + word_score
                     })
         
@@ -324,10 +349,13 @@ class ResumeParser:
             if len(line) > 50 or '@' in line or 'http' in line.lower():
                 continue
             
-            if is_valid_name(line):
+            # Clean and merge the line
+            cleaned_line = clean_and_merge_name(line)
+            
+            if is_valid_name(cleaned_line):
                 # Additional check: should have at least one space for first+last name
-                if ' ' in line:
-                    return line
+                if ' ' in cleaned_line:
+                    return cleaned_line
         
         # Strategy 3: Extract from email if available
         if email:
@@ -340,6 +368,7 @@ class ResumeParser:
         
         # Final fallback
         return "Unknown Candidate"
+
 
     
     def extract_skills(self, text: str) -> List[str]:
@@ -391,8 +420,23 @@ class ResumeParser:
         nlp = self._ensure_nlp_loaded()
         doc = nlp(text)
         
-        # Find organizations (companies)
-        companies = [ent.text for ent in doc.ents if ent.label_ == "ORG"]
+        # Find organizations (companies) and persons (to filter out)
+        person_names = {ent.text.lower() for ent in doc.ents if ent.label_ == "PERSON"}
+        companies = []
+        
+        for ent in doc.ents:
+            if ent.label_ == "ORG":
+                # Don't use person names as company names
+                if ent.text.lower() not in person_names:
+                    # Also check if it's not a substring of a person name
+                    is_person_name = False
+                    for person in person_names:
+                        if ent.text.lower() in person or person in ent.text.lower():
+                            is_person_name = True
+                            break
+                    
+                    if not is_person_name:
+                        companies.append(ent.text)
         
         # Extract years of experience (rough estimate)
         years = re.findall(r'\b(19|20)\d{2}\b', text)

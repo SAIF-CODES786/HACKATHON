@@ -5,10 +5,22 @@ import JobBuilder from './components/JobBuilder';
 import Dashboard from './components/Dashboard';
 import Analytics from './components/Analytics';
 import CandidateDetail from './components/CandidateDetail';
+import ErrorBoundary from './components/ErrorBoundary';
 import { FileSearch, BarChart3, Trash2, Sun, Moon } from 'lucide-react';
 import { useTheme } from './context/ThemeContext';
+import { Toaster, toast } from 'react-hot-toast';
+import { AnimatePresence, motion } from 'framer-motion';
 
 function App() {
+    return (
+        <ErrorBoundary>
+            <Toaster />
+            <AppContent />
+        </ErrorBoundary>
+    );
+}
+
+function AppContent() {
     const { isDark, toggleTheme } = useTheme();
     const [uploadedFiles, setUploadedFiles] = useState([]);
     const [candidates, setCandidates] = useState([]);
@@ -16,11 +28,40 @@ function App() {
     const [activeTab, setActiveTab] = useState('dashboard'); // dashboard or analytics
     const [isUploading, setIsUploading] = useState(false);
     const [isScoring, setIsScoring] = useState(false);
-    const [notification, setNotification] = useState(null);
 
     const showNotification = (message, type = 'success') => {
-        setNotification({ message, type });
-        setTimeout(() => setNotification(null), 4000);
+        if (type === 'success') {
+            toast.success(message, {
+                duration: 4000,
+                position: 'top-right',
+                style: {
+                    background: '#10b981',
+                    color: '#fff',
+                    fontWeight: '600',
+                },
+            });
+        } else if (type === 'error') {
+            toast.error(message, {
+                duration: 4000,
+                position: 'top-right',
+                style: {
+                    background: '#ef4444',
+                    color: '#fff',
+                    fontWeight: '600',
+                },
+            });
+        } else if (type === 'warning') {
+            toast(message, {
+                duration: 4000,
+                position: 'top-right',
+                icon: '⚠️',
+                style: {
+                    background: '#f59e0b',
+                    color: '#fff',
+                    fontWeight: '600',
+                },
+            });
+        }
     };
 
     const handleUpload = async (files) => {
@@ -113,15 +154,7 @@ function App() {
                     </p>
                 </div>
 
-                {/* Notification */}
-                {notification && (
-                    <div className={`fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-lg animate-slide-up ${notification.type === 'success' ? 'bg-green-500' :
-                        notification.type === 'warning' ? 'bg-yellow-500' :
-                            'bg-red-500'
-                        } text-white font-semibold`}>
-                        {notification.message}
-                    </div>
-                )}
+
 
                 {/* Main Content */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
@@ -182,13 +215,33 @@ function App() {
                         )}
 
                         {activeTab === 'dashboard' ? (
-                            <Dashboard
-                                candidates={candidates}
-                                onExport={handleExport}
-                                onViewDetails={handleViewDetails}
-                            />
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key="dashboard"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -20 }}
+                                    transition={{ duration: 0.3 }}
+                                >
+                                    <Dashboard
+                                        candidates={candidates}
+                                        onExport={handleExport}
+                                        onViewDetails={handleViewDetails}
+                                    />
+                                </motion.div>
+                            </AnimatePresence>
                         ) : (
-                            <Analytics candidates={candidates} />
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key="analytics"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -20 }}
+                                    transition={{ duration: 0.3 }}
+                                >
+                                    <Analytics candidates={candidates} />
+                                </motion.div>
+                            </AnimatePresence>
                         )}
                     </div>
                 </div>

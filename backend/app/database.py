@@ -7,11 +7,25 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, Text, cre
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
+from contextlib import contextmanager
+from typing import Generator
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./resume_screening.db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "postgresql://resume_user:resume_password@postgres:5432/resume_screening"
+)
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+# Create engine with connection pooling for production
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=10,           # Number of connections to maintain
+    max_overflow=20,        # Max additional connections
+    pool_pre_ping=True,     # Verify connections before using
+    pool_recycle=3600,      # Recycle connections after 1 hour
+    echo=False              # Set to True for SQL query logging
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -79,10 +93,43 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
 
-def get_db():
-    """Get database session"""
+
+# Context manager for database sessions with automatic transaction handling
+@contextmanager
+def get_db_context() -> Generator:
+    """
+    Provides a transactional scope for database operations
+    Automatically commits on success, rolls back on error, and closes session
+    
+    Usage:
+        with get_db_context() as db:
+            db.add(candidate)
+            # Automatically commits here
+    """
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def get_db() -> Generator:
+    """
+    FastAPI dependency for database sessions
+    Use with Depends() in route parameters
+    
+    Usage:
+        @router.get("/candidates")
+        def get_candidates(db: Session = Depends(get_db)):
+            return db.query(Candidate).all()
+    """
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+

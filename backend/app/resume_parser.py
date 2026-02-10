@@ -9,14 +9,37 @@ from docx import Document
 import spacy
 from typing import Dict, List, Optional
 import os
+import logging
+from functools import wraps
+import signal
+from app.exceptions import ResumeParsingError, FileSizeExceededError, InvalidFileFormatError
 
-# Load spaCy model for NLP
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    print("Downloading spaCy model...")
-    os.system("python -m spacy download en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm")
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Global spaCy model (lazy loaded)
+_nlp_model = None
+
+def timeout_handler(signum, frame):
+    """Handler for timeout signal"""
+    raise TimeoutError("Operation timed out")
+
+def with_timeout(seconds=30):
+    """Decorator to add timeout to functions"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Set the signal handler and alarm
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                signal.alarm(0)  # Disable the alarm
+            return result
+        return wrapper
+    return decorator
 
 
 class ResumeParser:
@@ -71,28 +94,120 @@ class ResumeParser:
         for category_skills in self.SKILLS_DATABASE.values():
             self.all_skills.extend(category_skills)
     
+    def _ensure_nlp_loaded(self):
+        """Lazy load spaCy model on first use"""
+        global _nlp_model
+        if _nlp_model is None:
+            try:
+                logger.info("Loading spaCy model...")
+                _nlp_model = spacy.load("en_core_web_sm")
+                logger.info("spaCy model loaded successfully")
+            except OSError:
+                logger.warning("spaCy model not found, downloading...")
+                os.system("python -m spacy download en_core_web_sm")
+                _nlp_model = spacy.load("en_core_web_sm")
+        return _nlp_model
+    
+    def _validate_file_size(self, file_path: str, max_size_mb: float = 10) -> None:
+        """Validate file size before processing"""
+        file_size = os.path.getsize(file_path)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        if file_size_mb > max_size_mb:
+            raise FileSizeExceededError(file_size_mb, max_size_mb)
+    
+    @with_timeout(30)
     def extract_text_from_pdf(self, file_path: str) -> str:
-        """Extract text from PDF file"""
+        """Extract text from PDF file with robust error handling"""
         text = ""
+        
+        # Validate file size first
+        try:
+            self._validate_file_size(file_path)
+        except FileSizeExceededError:
+            raise
+        
         try:
             with pdfplumber.open(file_path) as pdf:
+                # Check if PDF is encrypted
+                if pdf.metadata.get('Encrypt'):
+                    raise ResumeParsingError(
+                        "PDF is password-protected and cannot be processed",
+                        filename=os.path.basename(file_path)
+                    )
+                
+                # Extract text from all pages
                 for page in pdf.pages:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n"
+                
+                # Check if we extracted any text
+                if not text.strip():
+                    raise ResumeParsingError(
+                        "PDF contains no extractable text (might be scanned image)",
+                        filename=os.path.basename(file_path)
+                    )
+                    
+        except pdfplumber.pdfminer.pdfdocument.PDFPasswordIncorrect:
+            raise ResumeParsingError(
+                "PDF is password-protected",
+                filename=os.path.basename(file_path)
+            )
+        except pdfplumber.pdfminer.pdfparser.PDFSyntaxError:
+            raise ResumeParsingError(
+                "PDF file is corrupted or invalid",
+                filename=os.path.basename(file_path)
+            )
+        except TimeoutError:
+            raise ResumeParsingError(
+                "PDF processing timed out (file too complex)",
+                filename=os.path.basename(file_path)
+            )
         except Exception as e:
-            print(f"Error extracting PDF: {e}")
+            logger.error(f"Unexpected error extracting PDF {file_path}: {str(e)}")
+            raise ResumeParsingError(
+                f"Failed to extract PDF: {str(e)}",
+                filename=os.path.basename(file_path)
+            )
+        
         return text
     
+    @with_timeout(30)
     def extract_text_from_docx(self, file_path: str) -> str:
-        """Extract text from DOCX file"""
+        """Extract text from DOCX file with robust error handling"""
         text = ""
+        
+        # Validate file size first
+        try:
+            self._validate_file_size(file_path)
+        except FileSizeExceededError:
+            raise
+        
         try:
             doc = Document(file_path)
             for paragraph in doc.paragraphs:
                 text += paragraph.text + "\n"
+            
+            # Check if we extracted any text
+            if not text.strip():
+                raise ResumeParsingError(
+                    "DOCX contains no extractable text",
+                    filename=os.path.basename(file_path)
+                )
+                
+        except TimeoutError:
+            raise ResumeParsingError(
+                "DOCX processing timed out (file too complex)",
+                filename=os.path.basename(file_path)
+            )
         except Exception as e:
-            print(f"Error extracting DOCX: {e}")
+            logger.error(f"Error extracting DOCX {file_path}: {str(e)}")
+            raise ResumeParsingError(
+                f"Failed to extract DOCX: {str(e)}",
+                filename=os.path.basename(file_path)
+            )
+        
         return text
     
     def extract_email(self, text: str) -> Optional[str]:
@@ -180,6 +295,7 @@ class ResumeParser:
             return username.capitalize()
         
         # Strategy 1: Use spaCy NER to find PERSON entities
+        nlp = self._ensure_nlp_loaded()
         doc = nlp(text[:1000])  # Check first 1000 chars (increased from 500)
         
         candidates = []
@@ -272,6 +388,7 @@ class ResumeParser:
         experience = []
         
         # Look for common job title patterns and company names
+        nlp = self._ensure_nlp_loaded()
         doc = nlp(text)
         
         # Find organizations (companies)

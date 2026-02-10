@@ -13,6 +13,10 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -54,6 +58,24 @@ body {
   .badge-danger {
     @apply badge bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300;
   }
+
+  /* Glassmorphism effects */
+  .glass {
+    @apply bg-white/70 dark:bg-accent-900/70 backdrop-blur-md border border-white/20 dark:border-accent-700/50;
+  }
+
+  .glass-card {
+    @apply glass rounded-2xl shadow-glass hover:shadow-glass-lg transition-all duration-300;
+  }
+
+  /* Gradient backgrounds */
+  .gradient-bg {
+    @apply bg-gradient-to-br from-primary-50 via-accent-50 to-primary-100 dark:from-accent-950 dark:via-primary-950 dark:to-accent-900;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-600 to-accent-600 dark:from-primary-400 dark:to-accent-400 bg-clip-text text-transparent;
+  }
 }
 
 /* Custom scrollbar */
@@ -74,4 +96,14 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   @apply from-primary-600 to-accent-600;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  @apply outline-2 outline-offset-2 outline-primary-500 dark:outline-primary-400;
+}
+
+/* Smooth transitions */
+* {
+  @apply transition-colors duration-200;
 }

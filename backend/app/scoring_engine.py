@@ -7,6 +7,12 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from typing import Dict, List
+import logging
+from functools import lru_cache
+from app.exceptions import ScoringEngineError
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class ScoringEngine:
@@ -40,7 +46,22 @@ class ScoringEngine:
         """Initialize with custom weights if provided"""
         if weights:
             self.WEIGHTS = weights
-        self.vectorizer = TfidfVectorizer(stop_words='english', max_features=100)
+        self.vectorizer = None
+        self._vectorizer_initialized = False
+    
+    def _initialize_vectorizer(self):
+        """Initialize TF-IDF vectorizer (called once at startup)"""
+        if not self._vectorizer_initialized:
+            logger.info("Initializing TF-IDF vectorizer...")
+            self.vectorizer = TfidfVectorizer(stop_words='english', max_features=100)
+            self._vectorizer_initialized = True
+            logger.info("TF-IDF vectorizer initialized")
+    
+    def _ensure_vectorizer(self):
+        """Ensure vectorizer is initialized before use"""
+        if not self._vectorizer_initialized:
+            self._initialize_vectorizer()
+        return self.vectorizer
     
     def score_skills(self, candidate_skills: List[str], job_description: str, required_skills: List[str] = None) -> float:
         """
@@ -48,6 +69,11 @@ class ScoringEngine:
         Returns score 0-100
         """
         if not candidate_skills:
+            logger.warning("No candidate skills provided for scoring")
+            return 0.0
+        
+        if not job_description or not job_description.strip():
+            logger.warning("No job description provided for scoring")
             return 0.0
         
         # Combine candidate skills into a single text
@@ -60,8 +86,11 @@ class ScoringEngine:
             job_text = job_description
         
         try:
+            # Ensure vectorizer is initialized
+            vectorizer = self._ensure_vectorizer()
+            
             # Create TF-IDF vectors
-            tfidf_matrix = self.vectorizer.fit_transform([job_text, candidate_text])
+            tfidf_matrix = vectorizer.fit_transform([job_text, candidate_text])
             
             # Calculate cosine similarity
             similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
@@ -83,8 +112,8 @@ class ScoringEngine:
             return round(score, 2)
         
         except Exception as e:
-            print(f"Error in skill scoring: {e}")
-            return 0.0
+            logger.error(f"Error in skill scoring: {str(e)}")
+            raise ScoringEngineError(f"Skill scoring failed: {str(e)}")
     
     def score_experience(self, years: float, min_years: float = 0, max_years: float = 15) -> float:
         """

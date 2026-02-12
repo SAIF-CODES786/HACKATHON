@@ -58,6 +58,13 @@ class ResumeParser:
     EDUCATION_KEYWORDS = ['bachelor', 'master', 'phd', 'b.tech', 'm.tech', 'b.s', 'm.s', 'mba', 'degree', 'university', 'college']
     CERTIFICATION_KEYWORDS = ['certified', 'certification', 'certificate', 'aws', 'azure', 'google cloud', 'pmp', 'cissp']
     
+    # Pre-compiled regex patterns for performance
+    EMAIL_PATTERN = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
+    PHONE_PATTERN = re.compile(r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}')
+    YEAR_PATTERN = re.compile(r'\b(19|20)\d{2}\b')
+    EMAIL_USERNAME_SPLIT = re.compile(r'[._\-\d]+')
+    NON_NAME_WORDS = {'with', 'and', 'the', 'for', 'in', 'at', 'to', 'of', 'undergraduate', 'graduate', 'student'}
+    
     # Forbidden names - common tech terms that should never be names
     FORBIDDEN_NAMES = [
         # Programming Languages
@@ -90,9 +97,29 @@ class ResumeParser:
 
     
     def __init__(self):
+        # Build comprehensive skill list and set for fast lookups
         self.all_skills = []
         for category_skills in self.SKILLS_DATABASE.values():
             self.all_skills.extend(category_skills)
+        
+        # Convert to set for O(1) lookups
+        self.skills_set = {skill.lower() for skill in self.all_skills}
+        
+        # Convert forbidden terms to sets for O(1) lookups
+        self.forbidden_names_set = {term.lower() for term in self.FORBIDDEN_NAMES}
+        self.job_titles_set = {title.lower() for title in self.JOB_TITLES}
+        
+        # Pre-compile skill patterns for efficient matching
+        self._build_skill_pattern()
+    
+    def _build_skill_pattern(self):
+        """Build optimized regex pattern for skill matching"""
+        # Sort skills by length (longest first) to match multi-word skills first
+        sorted_skills = sorted(self.all_skills, key=len, reverse=True)
+        # Escape special regex characters and create pattern
+        escaped_skills = [re.escape(skill.lower()) for skill in sorted_skills]
+        pattern_str = r'\b(' + '|'.join(escaped_skills) + r')\b'
+        self.skills_pattern = re.compile(pattern_str, re.IGNORECASE)
     
     def _ensure_nlp_loaded(self):
         """Lazy load spaCy model on first use"""
@@ -211,16 +238,13 @@ class ResumeParser:
         return text
     
     def extract_email(self, text: str) -> Optional[str]:
-        """Extract email address using regex"""
-        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-        emails = re.findall(email_pattern, text)
+        """Extract email address using pre-compiled regex"""
+        emails = self.EMAIL_PATTERN.findall(text)
         return emails[0] if emails else None
     
     def extract_phone(self, text: str) -> Optional[str]:
-        """Extract phone number using regex"""
-        # Matches various phone formats
-        phone_pattern = r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'
-        phones = re.findall(phone_pattern, text)
+        """Extract phone number using pre-compiled regex"""
+        phones = self.PHONE_PATTERN.findall(text)
         return phones[0] if phones else None
     
     def extract_name(self, text: str, email: Optional[str] = None) -> Optional[str]:
@@ -247,13 +271,13 @@ class ResumeParser:
             
             name_lower = name.lower()
             
-            # STEP 1: Job Title Blocker - Reject if contains ANY job-related keyword
-            for job_title in self.JOB_TITLES:
+            # STEP 1: Job Title Blocker - Reject if contains ANY job-related keyword (O(1) set lookup)
+            for job_title in self.job_titles_set:
                 if job_title in name_lower:
                     return False  # Immediately discard if contains job title
             
-            # Check against forbidden names (tech terms)
-            for forbidden in self.FORBIDDEN_NAMES:
+            # Check against forbidden names (tech terms) - O(1) set lookup
+            for forbidden in self.forbidden_names_set:
                 if forbidden in name_lower:
                     return False
             
@@ -270,8 +294,7 @@ class ResumeParser:
                 return False
             
             # Reject if it looks like a sentence (contains common non-name words)
-            non_name_words = ['with', 'and', 'the', 'for', 'in', 'at', 'to', 'of', 'undergraduate', 'graduate', 'student']
-            if any(word in name_lower for word in non_name_words):
+            if any(word in name_lower for word in self.NON_NAME_WORDS):
                 return False
             
             return True
@@ -284,17 +307,23 @@ class ResumeParser:
             # Remove extra whitespace
             name = ' '.join(name.split())
             
-            # Fix split initials like "S K" -> "SK" or "S KUMAR" -> "S Kumar"
+            # Fix split initials like "S K" -> "SK" but preserve "S Kumar" as is
             words = name.split()
             cleaned_words = []
+            skip_next = False
             
             for i, word in enumerate(words):
-                # If it's a single letter (initial) and next word is also single letter
+                if skip_next:
+                    skip_next = False
+                    continue
+                
+                # Only merge if BOTH current and next are single letters (initials)
                 if len(word) == 1 and i + 1 < len(words) and len(words[i + 1]) == 1:
-                    # Merge initials: "S K" -> "SK"
+                    # Merge consecutive initials: "S K" -> "SK"
                     cleaned_words.append(word + words[i + 1])
-                    words[i + 1] = ''  # Mark as processed
-                elif word:  # Skip empty strings
+                    skip_next = True  # Skip the next word since we merged it
+                else:
+                    # Keep the word as is (whether it's a single letter or full word)
                     cleaned_words.append(word)
             
             return ' '.join(cleaned_words)
@@ -316,6 +345,41 @@ class ResumeParser:
                 return ' '.join(name_parts[:2])  # Take first two parts (first name, last name)
             return username.capitalize()
         
+        def fix_name_with_email(extracted_name: str, email: Optional[str]) -> str:
+            """
+            Cross-reference extracted name with email to fix OCR errors or missing letters
+            Example: If PDF has "AHUL" but email is "sahulshaw92@gmail.com", correct to "SAHUL"
+            """
+            if not email or not extracted_name:
+                return extracted_name
+            
+            # Extract expected name from email
+            email_name = extract_name_from_email(email)
+            email_parts = email_name.lower().split()
+            extracted_parts = extracted_name.lower().split()
+            
+            if not email_parts or not extracted_parts:
+                return extracted_name
+            
+            # Check if extracted name is a substring of email name (missing letters)
+            # Example: "ahul" is in "sahul"
+            corrected_parts = []
+            for extracted_part in extracted_parts:
+                best_match = extracted_part
+                for email_part in email_parts:
+                    # If extracted part is a substring of email part, use email part
+                    if extracted_part in email_part and len(email_part) > len(extracted_part):
+                        logger.info(f"DEBUG: Correcting '{extracted_part}' to '{email_part}' based on email")
+                        best_match = email_part
+                        break
+                corrected_parts.append(best_match.capitalize())
+            
+            corrected_name = ' '.join(corrected_parts)
+            if corrected_name.lower() != extracted_name.lower():
+                logger.info(f"DEBUG: Name corrected from '{extracted_name}' to '{corrected_name}' using email")
+            
+            return corrected_name
+        
         # Strategy 1: Use spaCy NER to find PERSON entities
         nlp = self._ensure_nlp_loaded()
         doc = nlp(text[:1000])  # Check first 1000 chars (increased from 500)
@@ -323,8 +387,14 @@ class ResumeParser:
         candidates = []
         for ent in doc.ents:
             if ent.label_ == "PERSON":
+                logger.info(f"DEBUG: spaCy found PERSON entity: '{ent.text}'")
                 # Clean and merge the name first
                 cleaned_name = clean_and_merge_name(ent.text)
+                logger.info(f"DEBUG: After clean_and_merge_name: '{cleaned_name}'")
+                
+                # Fix name using email if available
+                if email:
+                    cleaned_name = fix_name_with_email(cleaned_name, email)
                 
                 if is_valid_name(cleaned_name):
                     # Score based on position (earlier is better) and word count
@@ -336,10 +406,14 @@ class ResumeParser:
                         'name': cleaned_name.strip(),
                         'score': position_score + word_score
                     })
+                    logger.info(f"DEBUG: Valid candidate added: '{cleaned_name.strip()}' (score: {position_score + word_score})")
+                else:
+                    logger.info(f"DEBUG: Rejected by is_valid_name: '{cleaned_name}'")
         
         # Return highest scoring candidate
         if candidates:
             best_candidate = max(candidates, key=lambda x: x['score'])
+            logger.info(f"DEBUG: Best candidate selected: '{best_candidate['name']}'")
             return best_candidate['name']
         
         # Strategy 2: Check first few lines for name-like patterns
@@ -372,17 +446,14 @@ class ResumeParser:
 
     
     def extract_skills(self, text: str) -> List[str]:
-        """Extract skills by keyword matching"""
-        text_lower = text.lower()
-        found_skills = []
+        """Extract skills using optimized pattern matching"""
+        # Use pre-compiled pattern for all skills at once
+        matches = self.skills_pattern.findall(text.lower())
         
-        for skill in self.all_skills:
-            # Use word boundaries to avoid partial matches
-            pattern = r'\b' + re.escape(skill.lower()) + r'\b'
-            if re.search(pattern, text_lower):
-                found_skills.append(skill.title())
+        # Convert to title case and remove duplicates
+        found_skills = {match.title() for match in matches}
         
-        return list(set(found_skills))  # Remove duplicates
+        return list(found_skills)
     
     def extract_education(self, text: str) -> List[Dict[str, str]]:
         """Extract education information"""
@@ -399,8 +470,8 @@ class ResumeParser:
                     'year': ''
                 }
                 
-                # Try to find year (4 digits)
-                year_match = re.search(r'\b(19|20)\d{2}\b', line)
+                # Try to find year (4 digits) using pre-compiled pattern
+                year_match = self.YEAR_PATTERN.search(line)
                 if year_match:
                     edu_entry['year'] = year_match.group()
                 
@@ -453,9 +524,9 @@ class ResumeParser:
         return experience
     
     def calculate_years_of_experience(self, text: str) -> float:
-        """Calculate total years of experience"""
-        # Find all years mentioned
-        years = re.findall(r'\b(19|20)\d{2}\b', text)
+        """Calculate total years of experience using pre-compiled pattern"""
+        # Find all years mentioned using pre-compiled pattern
+        years = self.YEAR_PATTERN.findall(text)
         if len(years) >= 2:
             years_int = [int(y) for y in years]
             # Estimate: difference between oldest and newest year

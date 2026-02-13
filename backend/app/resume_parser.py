@@ -94,6 +94,20 @@ class ResumeParser:
         'coordinator', 'administrator', 'executive', 'assistant', 'representative'
     ]
 
+    # Common OCR fixes for names (missing first letters)
+    COMMON_OCR_FIXES = {
+        'umar': 'Kumar',
+        'ahul': 'Sahul',
+        'ishra': 'Mishra',
+        'arma': 'Sharma',
+        'upta': 'Gupta',
+        'ingh': 'Singh',
+        'adav': 'Yadav',
+        'riva': 'Srivastava',
+        'hane': 'Thane',
+        'anwar': 'Tanwar'
+    }
+
 
     
     def __init__(self):
@@ -335,14 +349,16 @@ class ResumeParser:
                 return "Unknown Candidate"
             
             # Get part before @
-            username = email.split('@')[0]
+            username = email.split('@')[0].lower()
             
             # Remove numbers and special characters
             name_parts = re.split(r'[._\-\d]+', username)
             name_parts = [part.capitalize() for part in name_parts if part and len(part) > 1]
             
             if name_parts:
-                return ' '.join(name_parts[:2])  # Take first two parts (first name, last name)
+                # If the first part is very long, it might be concatenated (e.g., "sahulshawlike")
+                # We should stop at 2 parts maximum for a name
+                return ' '.join(name_parts[:2])
             return username.capitalize()
         
         def fix_name_with_email(extracted_name: str, email: Optional[str]) -> str:
@@ -350,10 +366,24 @@ class ResumeParser:
             Cross-reference extracted name with email to fix OCR errors or missing letters
             Example: If PDF has "AHUL" but email is "sahulshaw92@gmail.com", correct to "SAHUL"
             """
-            if not email or not extracted_name:
+            if not extracted_name:
                 return extracted_name
             
-            # Extract expected name from email
+            # 1. Apply Common OCR Fixes first (e.g., Umar -> Kumar)
+            words = extracted_name.lower().split()
+            fixed_words = []
+            for word in words:
+                if word in self.COMMON_OCR_FIXES:
+                    fixed_words.append(self.COMMON_OCR_FIXES[word])
+                else:
+                    fixed_words.append(word.capitalize())
+            
+            extracted_name = ' '.join(fixed_words)
+            
+            if not email:
+                return extracted_name
+            
+            # 2. Cross-reference with email handle
             email_name = extract_name_from_email(email)
             email_parts = email_name.lower().split()
             extracted_parts = extracted_name.lower().split()
@@ -361,22 +391,34 @@ class ResumeParser:
             if not email_parts or not extracted_parts:
                 return extracted_name
             
-            # Check if extracted name is a substring of email name (missing letters)
-            # Example: "ahul" is in "sahul"
+            # Check if extracted name is a missing prefix case (e.g., "ahul" instead of "sahul")
             corrected_parts = []
             for extracted_part in extracted_parts:
                 best_match = extracted_part
+                found_in_email = False
                 for email_part in email_parts:
-                    # If extracted part is a substring of email part, use email part
-                    if extracted_part in email_part and len(email_part) > len(extracted_part):
-                        logger.info(f"DEBUG: Correcting '{extracted_part}' to '{email_part}' based on email")
-                        best_match = email_part
+                    # Find if extracted name exists inside the email handle
+                    idx = email_part.find(extracted_part.lower())
+                    
+                    # If it's a missing prefix case (e.g., "ahul" in "sahulshawlike")
+                    # We allow missing 1 or 2 characters at the start.
+                    if 1 <= idx <= 2:
+                        potential_match = email_part[:idx + len(extracted_part)]
+                        logger.info(f"DEBUG: Correcting '{extracted_part}' to '{potential_match}' (missing prefix using email handle)")
+                        best_match = potential_match
+                        found_in_email = True
                         break
-                corrected_parts.append(best_match.capitalize())
+                
+                if not found_in_email:
+                    # If not in email, but we already fixed it via COMMON_OCR_FIXES, keep it
+                    # (best_match is already capitalized correctly if it was in common fixes)
+                    corrected_parts.append(best_match.capitalize())
+                else:
+                    corrected_parts.append(best_match.capitalize())
             
             corrected_name = ' '.join(corrected_parts)
             if corrected_name.lower() != extracted_name.lower():
-                logger.info(f"DEBUG: Name corrected from '{extracted_name}' to '{corrected_name}' using email")
+                logger.info(f"DEBUG: Name corrected from '{extracted_name}' to '{corrected_name}' using email/fixes")
             
             return corrected_name
         
@@ -417,23 +459,37 @@ class ResumeParser:
             return best_candidate['name']
         
         # Strategy 2: Check first few lines for name-like patterns
+        logger.info("DEBUG: Strategy 1 (spaCy) failed, trying Strategy 2 (first lines)")
         lines = [line.strip() for line in text.split('\n') if line.strip()]
-        for line in lines[:5]:  # Check first 5 non-empty lines
+        for i, line in enumerate(lines[:5]):  # Check first 5 non-empty lines
+            logger.info(f"DEBUG: Strategy 2 - Checking line {i}: '{line[:100]}'")
             # Skip lines that are clearly not names
             if len(line) > 50 or '@' in line or 'http' in line.lower():
+                logger.info(f"DEBUG: Strategy 2 - Skipped line {i} (too long or contains @ or http)")
                 continue
             
             # Clean and merge the line
             cleaned_line = clean_and_merge_name(line)
+            logger.info(f"DEBUG: Strategy 2 - After cleaning: '{cleaned_line}'")
             
             if is_valid_name(cleaned_line):
                 # Additional check: should have at least one space for first+last name
                 if ' ' in cleaned_line:
+                    logger.info(f"DEBUG: Strategy 2 - Found valid name: '{cleaned_line}'")
+                    # Fix name using email if available
+                    if email:
+                        cleaned_line = fix_name_with_email(cleaned_line, email)
+                        logger.info(f"DEBUG: Strategy 2 - After email fix: '{cleaned_line}'")
                     return cleaned_line
+                else:
+                    logger.info(f"DEBUG: Strategy 2 - Rejected '{cleaned_line}' (no space)")
         
         # Strategy 3: Extract from email if available
+        logger.info("DEBUG: Strategy 2 failed, trying Strategy 3 (email extraction)")
         if email:
-            return extract_name_from_email(email)
+            extracted = extract_name_from_email(email)
+            logger.info(f"DEBUG: Strategy 3 - Extracted from email '{email}': '{extracted}'")
+            return extracted
         
         # Strategy 4: Try to extract email from text and use it
         extracted_email = self.extract_email(text)
